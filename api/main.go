@@ -20,8 +20,8 @@ var (
 
 const (
 	domainsURL         = "https://disposable.github.io/disposable-email-domains/domains_mx.json"
-	defaultRequestLimit = 1000
-	resetInterval      = 24 * time.Hour // 每24小时重置一次计数器
+	defaultRequestLimit = 20
+	resetInterval      = 24 * time.Hour // The counter is reset every 24 hours
 	requestLimitKey    = "REQUEST_LIMIT"
 )
 
@@ -88,18 +88,36 @@ func checkRequestLimit() bool {
 
 func verifyHandler(w http.ResponseWriter, r *http.Request) {
 	if !checkRequestLimit() {
-		http.Error(w, "Daily request limit exceeded", http.StatusTooManyRequests)
+		// http.Error(w, "Daily request limit exceeded", http.StatusTooManyRequests)
+		response := map[string]interface{}{
+			"code": http.StatusTooManyRequests,
+			"msg": "Daily request limit exceeded",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
 	email := r.URL.Query().Get("email")
 	if email == "" {
-		http.Error(w, "Email is required", http.StatusBadRequest)
+		// http.Error(w, "Email is required", http.StatusBadRequest)
+		response := map[string]interface{}{
+			"code": http.StatusBadRequest,
+			"msg": "Email is required",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
 	isDisposable := isDisposableEmail(email)
-	response := map[string]bool{"disposable": isDisposable}
+	response := map[string]interface{}{
+		"code": http.StatusOK,
+		"msg": "success",
+		"data": map[string]interface{}{
+			"disposable": isDisposable,
+		},
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
@@ -115,7 +133,7 @@ func init() {
 		log.Fatalf("Failed to load disposable email domains: %v", err)
 	}
 
-	// 定时刷新域名列表
+	// Refresh the list of domain names on a regular basis
 	go func() {
 		ticker := time.NewTicker(resetInterval)
 		defer ticker.Stop()
