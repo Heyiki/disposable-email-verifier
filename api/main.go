@@ -105,6 +105,11 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// Vercel expects a function named "Handler" to be exported
+func Handler(w http.ResponseWriter, r *http.Request) {
+	verifyHandler(w, r)
+}
+
 func main() {
 	if err := loadDisposableDomains(); err != nil {
 		log.Fatalf("Failed to load disposable email domains: %v", err)
