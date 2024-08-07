@@ -6,17 +6,24 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 var (
-	disposableDomains map[string]struct{}
-	mu                sync.RWMutex
+	disposableDomains sync.Map
+	requestCount      int
+	resetTime         time.Time
 )
 
-const domainsURL = "https://disposable.github.io/disposable-email-domains/domains_mx.json"
+const (
+	domainsURL         = "https://disposable.github.io/disposable-email-domains/domains_mx.json"
+	defaultRequestLimit = 1000
+	resetInterval      = 24 * time.Hour // 每24小时重置一次计数器
+	requestLimitKey    = "REQUEST_LIMIT"
+)
 
 func loadDisposableDomains() error {
 	resp, err := http.Get(domainsURL)
@@ -35,11 +42,8 @@ func loadDisposableDomains() error {
 		return err
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
-	disposableDomains = make(map[string]struct{}, len(domains))
 	for _, domain := range domains {
-		disposableDomains[domain] = struct{}{}
+		disposableDomains.Store(domain, struct{}{})
 	}
 	return nil
 }
@@ -49,15 +53,45 @@ func isDisposableEmail(email string) bool {
 	if len(parts) != 2 {
 		return false
 	}
-	domain := parts[1]
-
-	mu.RLock()
-	defer mu.RUnlock()
-	_, found := disposableDomains[domain]
+	_, found := disposableDomains.Load(parts[1])
 	return found
 }
 
+func getRequestLimit() int {
+	limitStr := os.Getenv(requestLimitKey)
+	if limitStr == "" {
+		return defaultRequestLimit
+	}
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		log.Printf("Invalid request limit value: %v", err)
+		return defaultRequestLimit
+	}
+	return limit
+}
+
+func checkRequestLimit() bool {
+	now := time.Now()
+	if now.After(resetTime) {
+		// 重置计数器
+		requestCount = 0
+		resetTime = now.Add(resetInterval)
+	}
+
+	if requestCount >= getRequestLimit() {
+		return false
+	}
+
+	requestCount++
+	return true
+}
+
 func verifyHandler(w http.ResponseWriter, r *http.Request) {
+	if !checkRequestLimit() {
+		http.Error(w, "Daily request limit exceeded", http.StatusTooManyRequests)
+		return
+	}
+
 	email := r.URL.Query().Get("email")
 	if email == "" {
 		http.Error(w, "Email is required", http.StatusBadRequest)
@@ -76,9 +110,9 @@ func main() {
 		log.Fatalf("Failed to load disposable email domains: %v", err)
 	}
 
-	// 定时刷新域名列表，例如每小时刷新一次
+	// 定时刷新域名列表
 	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
+		ticker := time.NewTicker(resetInterval)
 		defer ticker.Stop()
 		for range ticker.C {
 			if err := loadDisposableDomains(); err != nil {
