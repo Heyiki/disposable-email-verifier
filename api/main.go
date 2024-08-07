@@ -1,4 +1,4 @@
-package main
+package handler
 
 import (
 	"encoding/json"
@@ -110,7 +110,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	verifyHandler(w, r)
 }
 
-func main() {
+func init() {
 	if err := loadDisposableDomains(); err != nil {
 		log.Fatalf("Failed to load disposable email domains: %v", err)
 	}
@@ -125,16 +125,4 @@ func main() {
 			}
 		}
 	}()
-
-	http.HandleFunc("/verify", verifyHandler)
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	log.Printf("Starting server on port %s", port)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatalf("Failed to run server: %v", err)
-	}
 }
